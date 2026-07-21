@@ -1,10 +1,12 @@
 (function GeniusProducers() {
-    if (!Spicetify.Player || !Spicetify.Platform || !Spicetify.Topbar || !Spicetify.showNotification) {
+    if (!Spicetify.Player || !Spicetify.Platform || !Spicetify.Menu || !Spicetify.PopupModal || !Spicetify.showNotification || !Spicetify.LocalStorage) {
         setTimeout(GeniusProducers, 100);
         return;
     }
 
-    const GENIUS_ACCESS_TOKEN = "5q1S3r0M-fg_RlFko0bAPK6VH-bVt8mxelHXcZnJvkT_poiQy7V-hAQvftTMdSQY";
+    function getToken() {
+        return Spicetify.LocalStorage.get("genius_producers_token") || "";
+    }
     
     let currentSongUri = null;
     let currentProducersText = "";
@@ -23,13 +25,13 @@
         
         let cleanTitle = title.replace(/\s-\s.+$/, "").replace(/\s\(.+$/, "").trim();
         const query = encodeURIComponent(`${cleanTitle} ${artist}`);
+        const accessToken = getToken();
+        if (!accessToken) {
+            return { text: "", error: "Пожалуйста, укажите ваш Genius Access Token в настройках профиля (Genius Producers Settings)." };
+        }
         
         try {
-            // Убираем прокси. 403 выдавал Cloudflare, потому что он блокирует публичные прокси.
-            // Вместо отправки токена в Headers (что вызывает сложный CORS OPTIONS-запрос, 
-            // на котором всё и ломалось с "failed to fetch"), мы передаем токен прямо в URL!
-            // Это делает запрос простым GET-запросом, который проходит напрямую.
-            const searchUrl = `https://api.genius.com/search?q=${query}&access_token=${GENIUS_ACCESS_TOKEN}`;
+            const searchUrl = `https://api.genius.com/search?q=${query}&access_token=${accessToken}`;
             const searchRes = await fetch(searchUrl);
             
             if (!searchRes.ok) return { text: "", error: `Ошибка поиска: ${searchRes.status}` };
@@ -40,7 +42,7 @@
             }
             
             const songId = searchData.response.hits[0].result.id;
-            const songUrl = `https://api.genius.com/songs/${songId}?access_token=${GENIUS_ACCESS_TOKEN}`;
+            const songUrl = `https://api.genius.com/songs/${songId}?access_token=${accessToken}`;
             const songRes = await fetch(songUrl);
             
             if (!songRes.ok) return { text: "", error: `Ошибка деталей трека: ${songRes.status}` };
@@ -136,13 +138,94 @@
         }
     }
 
-    new Spicetify.Topbar.Button(
-        "Show Producers",
-        `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`,
-        () => {
+    // --- НАСТРОЙКИ (ПОПАП И МЕНЮ) ---
+    function openSettings() {
+        const container = document.createElement("div");
+        container.style.display = "flex";
+        container.style.flexDirection = "column";
+        container.style.gap = "15px";
+
+        const label = document.createElement("label");
+        label.innerText = "Genius API Access Token";
+        label.style.fontWeight = "bold";
+        label.style.color = "var(--spice-text)";
+
+        const input = document.createElement("input");
+        input.type = "text";
+        input.value = Spicetify.LocalStorage.get("genius_producers_token") || "";
+        input.placeholder = "Введите ваш Genius API Access Token...";
+        input.style.width = "100%";
+        input.style.padding = "10px";
+        input.style.borderRadius = "4px";
+        input.style.border = "1px solid var(--spice-button-disabled)";
+        input.style.background = "var(--spice-main-elevated)";
+        input.style.color = "var(--spice-text)";
+
+        const buttonsDiv = document.createElement("div");
+        buttonsDiv.style.display = "flex";
+        buttonsDiv.style.justifyContent = "flex-end";
+        buttonsDiv.style.gap = "10px";
+        buttonsDiv.style.marginTop = "10px";
+
+        const testBtn = document.createElement("button");
+        testBtn.innerText = "Test Search (Manual)";
+        testBtn.style.padding = "8px 16px";
+        testBtn.style.borderRadius = "20px";
+        testBtn.style.background = "var(--spice-button-disabled)";
+        testBtn.style.color = "var(--spice-text)";
+        testBtn.style.border = "none";
+        testBtn.style.cursor = "pointer";
+
+        testBtn.onclick = () => {
+            if (input.value.trim()) {
+                Spicetify.LocalStorage.set("genius_producers_token", input.value.trim());
+            } else {
+                Spicetify.LocalStorage.remove("genius_producers_token");
+            }
             update(true);
-        }
-    );
+        };
+
+        const saveBtn = document.createElement("button");
+        saveBtn.innerText = "Save";
+        saveBtn.style.padding = "8px 16px";
+        saveBtn.style.borderRadius = "20px";
+        saveBtn.style.background = "var(--spice-button)";
+        saveBtn.style.color = "var(--spice-text)";
+        saveBtn.style.border = "none";
+        saveBtn.style.cursor = "pointer";
+
+        saveBtn.onclick = () => {
+            if (input.value.trim()) {
+                Spicetify.LocalStorage.set("genius_producers_token", input.value.trim());
+            } else {
+                Spicetify.LocalStorage.remove("genius_producers_token");
+            }
+            Spicetify.PopupModal.hide();
+            Spicetify.showNotification("Settings saved!");
+            update(false);
+        };
+
+        container.appendChild(label);
+        container.appendChild(input);
+        buttonsDiv.appendChild(testBtn);
+        buttonsDiv.appendChild(saveBtn);
+        container.appendChild(buttonsDiv);
+
+        Spicetify.PopupModal.display({
+            title: "Genius Producers Settings",
+            content: container,
+            isLarge: false
+        });
+    }
+
+    new Spicetify.Menu.Item(
+        "Genius Producers Settings",
+        false,
+        openSettings,
+        `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`
+    ).register();
+
+    // ---------------------------------
 
     const observer = new MutationObserver(() => {
         const titleEl = document.querySelector('.main-trackInfo-name') 
