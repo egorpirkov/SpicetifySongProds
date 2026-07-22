@@ -39,7 +39,8 @@
             noTrackPlaying: "No track playing or data not found.",
             tokenInvalid: "Invalid Token (spaces or empty)",
             tokenValid: "Token seems ok",
-            testNoMatch: "Genius has no exact match for this track"
+            testNoMatch: "Genius has no exact match for this track",
+            songDetailsError: (code) => `Song details error: ${code}`
         },
         ru: {
             noTitleOrArtist: "Нет названия или артиста",
@@ -63,7 +64,8 @@
             noTrackPlaying: "Трек не играет или данные не найдены.",
             tokenInvalid: "Неверный токен (пустой или с пробелами)",
             tokenValid: "Токен выглядит нормально",
-            testNoMatch: "На Genius нет точного совпадения для этого трека"
+            testNoMatch: "На Genius нет точного совпадения для этого трека",
+            songDetailsError: (code) => `Ошибка деталей трека: ${code}`
         }
     };
 
@@ -98,6 +100,7 @@
     const CACHE_KEY = "genius_producers_cache";
     const MAX_CACHE_SIZE = 300;
     const CACHE_TTL = 30 * 24 * 60 * 60 * 1000; // 30 days
+    const NEGATIVE_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
 
     function getCache() {
         try {
@@ -114,19 +117,21 @@
     function getFromCache(uri) {
         const cache = getCache();
         const entry = cache[uri];
-        if (entry && (Date.now() - entry.ts) < CACHE_TTL) {
-            return entry.text;
-        }
         if (entry) {
-            delete cache[uri];
-            saveCache(cache);
+            const ttl = entry.negative ? NEGATIVE_CACHE_TTL : CACHE_TTL;
+            if ((Date.now() - entry.ts) < ttl) {
+                return entry.text;
+            } else {
+                delete cache[uri];
+                saveCache(cache);
+            }
         }
         return null;
     }
 
     function setToCache(uri, text) {
         const cache = getCache();
-        cache[uri] = { text, ts: Date.now() };
+        cache[uri] = { text, ts: Date.now(), negative: !text };
         
         const keys = Object.keys(cache);
         if (keys.length > MAX_CACHE_SIZE) {
@@ -205,7 +210,7 @@
         activeAbortController = new AbortController();
         const signal = activeAbortController.signal;
 
-        let cleanTitle = title.replace(/\s-\s.+$/, "").replace(/\s\(.+$/, "").trim();
+        let cleanTitle = cleanBrackets(title);
         const query = encodeURIComponent(`${cleanTitle} ${artist}`);
 
         try {
@@ -253,7 +258,7 @@
             const songRes = await fetch(songReqUrl, fetchOpts);
             clearTimeout(timeoutId);
 
-            if (!songRes.ok) return { text: "", error: `Ошибка деталей трека: ${songRes.status}` };
+            if (!songRes.ok) return { text: "", error: _("songDetailsError", songRes.status) };
 
             const songData = await songRes.json();
             const producers = songData.response?.song?.producer_artists;
@@ -329,7 +334,7 @@
         return null;
     }
 
-    async function update(showToast = false) {
+    async function update(showToast = false, forceRefresh = false) {
         const isEnabled = Spicetify.LocalStorage.get("genius_producers_enabled") !== "false";
         if (!isEnabled) {
             currentProducersText = "";
@@ -346,8 +351,12 @@
         const type = item.type || item.track_type;
         const uri = item.uri || "";
         const isLocal = uri.startsWith("spotify:local:") || item.is_local;
+        const isAd = uri.startsWith("spotify:ad:") || type === "ad";
+
+        if (isAd) return;
 
         if (type && type !== "track" && type !== "local" && type !== "song") { // exclude podcast, ad
+            console.info("[GeniusProducers] Skipped unknown content type:", type, uri);
             return;
         }
 
@@ -366,24 +375,30 @@
             return;
         }
 
-        if (showToast) {
-            Spicetify.showNotification(_("searching", title));
-        }
-
-        if (uri === currentSongUri && currentProducersText) {
+        if (!forceRefresh && uri === currentSongUri && currentProducersText) {
             injectDOM();
             if (showToast) Spicetify.showNotification(currentProducersText);
             return;
         }
 
+        if (forceRefresh) {
+            const cache = getCache();
+            delete cache[uri];
+            saveCache(cache);
+        }
+
         currentSongUri = uri;
         
         const cached = getFromCache(uri);
-        if (cached !== null) {
+        if (!forceRefresh && cached !== null) {
             currentProducersText = cached;
             injectDOM();
             if (showToast && cached) Spicetify.showNotification(cached);
             return;
+        }
+
+        if (showToast) {
+            Spicetify.showNotification(_("searching", title));
         }
 
         currentProducersText = ""; 
@@ -394,9 +409,7 @@
         
         if (currentSongUri === uri) {
             currentProducersText = res.text;
-            if (res.text) {
-                setToCache(uri, res.text);
-            }
+            setToCache(uri, res.text);
             injectDOM();
             if (showToast) {
                 if (res.text) {
@@ -530,7 +543,7 @@
             Spicetify.LocalStorage.set("genius_producers_lang", langSelect.value);
             Spicetify.LocalStorage.set("genius_producers_enabled", enableCheck.checked ? "true" : "false");
             Spicetify.LocalStorage.set("genius_producers_disable_local", localCheck.checked ? "true" : "false");
-            update(true);
+            update(true, true);
         };
 
         const saveBtn = document.createElement("button");
@@ -601,12 +614,15 @@
 
     // CLEANUP EXPORT (for hot-reload testing)
     window.__geniusProducersCleanup = () => {
-        observer.disconnect();
-        clearInterval(initInterval);
-        Spicetify.Player.removeEventListener("songchange", onSongChange);
-        menuItem.deregister();
-        const el = document.getElementById("genius-producer-info");
-        if (el) el.remove();
+        try { observer.disconnect(); } catch (e) {}
+        try { clearInterval(initInterval); } catch (e) {}
+        try { clearTimeout(debounceTimer); } catch (e) {}
+        try { Spicetify.Player.removeEventListener("songchange", onSongChange); } catch (e) {}
+        try { menuItem.deregister?.(); } catch (e) { console.warn("[GeniusProducers] menu cleanup failed", e); }
+        try {
+            const el = document.getElementById("genius-producer-info");
+            if (el) el.remove();
+        } catch (e) {}
         delete window.__geniusProducersLoaded;
     };
 
