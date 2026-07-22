@@ -1,0 +1,18 @@
+{
+  "name": "Genius Producers",
+  "description": "Displays producer credits for the currently playing track using Genius.com data",
+  "main": "genius-producers.js",
+  "preview": "assets/preview.gif",
+  "readme": "README.md",
+  "authors": [
+    {
+      "name": "pirkov",
+      "url": "https://github.com/pirkov"
+    }
+  ],
+  "tags": [
+    "metadata",
+    "genius",
+    "now-playing"
+  ]
+}
