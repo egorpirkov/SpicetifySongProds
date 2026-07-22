@@ -1,7 +1,7 @@
 // NAME: Genius Producers
 // AUTHOR: pirkov
-// DESCRIPTION: Shows track producers under the song title, using the Genius API
-// VERSION: 1.0.0
+// DESCRIPTION: Shows track producers above the song title, using the Genius API
+// VERSION: 1.0.1
 
 (function GeniusProducers() {
     if (!Spicetify.Player || !Spicetify.Platform || !Spicetify.Menu || !Spicetify.PopupModal || !Spicetify.showNotification || !Spicetify.LocalStorage) {

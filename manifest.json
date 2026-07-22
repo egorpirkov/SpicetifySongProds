@@ -1,18 +1,13 @@
-{
-  "name": "Genius Producers",
-  "description": "Displays producer credits for the currently playing track using Genius.com data",
-  "main": "genius-producers.js",
-  "preview": "assets/preview.gif",
-  "readme": "README.md",
-  "authors": [
-    {
-      "name": "Egor Pirkov",
-      "url": "https://github.com/egorpirkov"
-    }
-  ],
-  "tags": [
-    "metadata",
-    "genius",
-    "now-playing"
-  ]
-}
+[
+  {
+    "name": "Genius Producers",
+    "description": "Shows track producers above the song title using the Genius API, with strict title/artist matching to avoid mismatched credits.",
+    "preview": "assets/preview.gif",
+    "main": "genius-producers.js",
+    "readme": "README.md",
+    "authors": [
+      { "name": "egorpirkov", "url": "https://github.com/egorpirkov" }
+    ],
+    "tags": ["metadata", "genius", "now-playing"]
+  }
+]
